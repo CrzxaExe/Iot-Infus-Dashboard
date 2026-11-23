@@ -1,0 +1,3 @@
+<template>
+  Perangkat
+</template>

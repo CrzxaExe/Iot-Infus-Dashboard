@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-primary: #02182b;
+  --color-secondary: #8da1b9;
+  --color-tertier: #FFFFFF;
+}
+
+@utility animatable {
+  @apply transition-all ease-in-out duration-300;
+}
