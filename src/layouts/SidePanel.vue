@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import SidebarNavigation from '@/components/navigations/SidebarNavigation.vue'
+import PixelNotificationToast from '@/components/ui/PixelNotificationToast.vue'
 import { RouterView } from 'vue-router'
 </script>
-
 <template>
-  <main class="w-full min-h-screen flex gap-2 lg:gap-3 justify-center">
+  <div class="min-h-screen bg-surface">
     <SidebarNavigation />
-
-    <article class="block md:max-w-2xl lg:max-w-3xl xl:max-w-4xl 2xl:max-w-6xl w-full">
-      <RouterView></RouterView>
-    </article>
-  </main>
+    <main class="min-h-screen min-w-0 pl-0 transition-[padding] duration-200 lg:pl-60"><div class="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8"><RouterView /></div></main>
+    <PixelNotificationToast />
+  </div>
 </template>

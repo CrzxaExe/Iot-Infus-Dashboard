@@ -29,6 +29,16 @@ See [Vite Configuration Reference](https://vite.dev/config/).
 bun install
 ```
 
+### Connect to the Go infusion server
+
+Copy `.env.example` to `.env.local` and set `VITE_API_BASE_URL` to the Go server's HTTP address. For a local server using its default port:
+
+```env
+VITE_API_BASE_URL=http://localhost:8080
+```
+
+The dashboard connects to `/ws` and subscribes to the server's `data/+` label. The Go server forwards MQTT telemetry to the browser; the browser does not connect to MQTT directly. The current server protocol provides telemetry only, so device registration, patient/nurse assignment, session history, and device control remain unavailable in live mode.
+
 ### Compile and Hot-Reload for Development
 
 ```sh

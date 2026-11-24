@@ -1,3 +1,3 @@
 <template>
-  ruangan
+  ruangan kos wisma kemuning
 </template>
