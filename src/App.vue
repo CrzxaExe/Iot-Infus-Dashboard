@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<!-- <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 import { RouterView } from 'vue-router'
 import { connectInfusionRealtime } from '@/services/infusionRealtime'
@@ -12,6 +12,11 @@ onMounted(() => {
 onUnmounted(() => disconnect?.())
 </script>
 
+<template>
+  <RouterView></RouterView>
+</template>
+
+<style scoped></style> -->
 <template>
   <RouterView></RouterView>
 </template>

@@ -25,6 +25,7 @@ export interface InfusionVolumeSample {
 export interface InfusionDevice {
   id: string
   room: string
+  bed?: string
   patient: string
   nurse: string
   fluid: string
@@ -85,6 +86,7 @@ export interface DeviceConfigForm {
   nurse: string
   patient: string
   room: string
+  bed: string
   fluid: string
   totalMl: number
   targetTpm: number

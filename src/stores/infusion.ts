@@ -125,7 +125,7 @@ export const useInfusionStore = defineStore('infusion', () => {
   }
 
   function syncHistoryDetails(entry: InfusionHistoryEntry, device: InfusionDevice) {
-    Object.assign(entry, { patient: device.patient, room: device.room, fluid: device.fluid, nurse: device.nurse })
+    Object.assign(entry, { deviceId: device.id, patient: device.patient, room: device.room, fluid: device.fluid, nurse: device.nurse })
   }
 
   function configureDevice(payload: DeviceConfigForm) {
@@ -134,11 +134,12 @@ export const useInfusionStore = defineStore('infusion', () => {
     const patient = payload.patient.trim()
     const nurse = payload.nurse.trim()
     const room = payload.room.trim()
+    const bed = payload.bed.trim()
     const status: HistoryStatus = patient && nurse ? 'running' : 'ready'
     if (existing) {
       const previousStatus = existing.status
       const previousDevice = { ...existing }
-      updateDevice(existing.id, { nurse, patient, room, fluid: payload.fluid, totalMl, remainingMl: totalMl, volumePct: 100, rateTpm: payload.targetTpm, targetTpm: payload.targetTpm, status, paused: false, volumeHistory: [] })
+      updateDevice(existing.id, { nurse, patient, room, bed, fluid: payload.fluid, totalMl, remainingMl: totalMl, volumePct: 100, rateTpm: payload.targetTpm, targetTpm: payload.targetTpm, status, paused: false, volumeHistory: [] })
       const updatedDevice = findDevice(existing.id)
       const entry = findOpenHistory(existing.id)
       if (!updatedDevice) return
@@ -162,7 +163,7 @@ export const useInfusionStore = defineStore('infusion', () => {
         history.value.unshift(createHistoryEntry(updatedDevice, status))
       }
     } else {
-      const device: InfusionDevice = { id: payload.deviceId, room, patient, nurse, fluid: payload.fluid, targetTpm: payload.targetTpm, totalMl, remainingMl: totalMl, volumePct: 100, rateTpm: payload.targetTpm, status, paused: false, updatedAt: 'Baru', volumeHistory: [] }
+      const device: InfusionDevice = { id: payload.deviceId, room, bed, patient, nurse, fluid: payload.fluid, targetTpm: payload.targetTpm, totalMl, remainingMl: totalMl, volumePct: 100, rateTpm: payload.targetTpm, status, paused: false, updatedAt: 'Baru', volumeHistory: [] }
       devices.value.push(device)
       history.value.unshift(createHistoryEntry(device, status))
     }

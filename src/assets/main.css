@@ -1,34 +1,35 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #00652C;
-  --color-primary-container: #15803D;
-  --color-on-primary: #FFFFFF;
-  --color-secondary: #181D17;
-  --color-secondary-container: #E4EAE1;
-  --color-on-secondary: #FFFFFF;
+  --color-primary: #00625C;
+  --color-primary-container: #00625C;
+  --color-on-primary: #F6FBF2;
+  --color-secondary: #001412;
+  --color-secondary-container: #C6DED6;
+  --color-on-secondary: #F6FBF2;
   --color-surface: #F6FBF2;
-  --color-surface-container-lowest: #FFFFFF;
-  --color-surface-container-low: #F0F5EC;
-  --color-surface-container: #EAEFE6;
-  --color-surface-container-high: #E4EAE1;
-  --color-on-surface: #181D17;
-  --color-on-surface-variant: #3F493F;
-  --color-outline: #6F7A6E;
-  --color-outline-variant: #BECABC;
-  --color-warning: #B45309;
-  --color-warning-container: #FEF3C7;
-  --color-on-warning-container: #78350F;
-  --color-error: #BA1A1A;
-  --color-error-container: #FFDAD6;
-  --color-on-error-container: #93000A;
-  --color-info: #1D4ED8;
-  --color-info-container: #DBEAFE;
-  --color-on-info-container: #1E3A8A;
-  --color-inverse-surface: #181D17;
-  --color-inverse-on-surface: #FFFFFF;
-  --color-inverse-primary: #79DB8D;
-  --color-muted: #647064;
+  --color-surface-container-lowest: #F6FBF2;
+  --color-surface-container-low: #F6FBF2;
+  --color-surface-container: #C6DED6;
+  --color-surface-container-high: #C6DED6;
+  --color-on-surface: #001412;
+  --color-on-surface-variant: #001412;
+  --color-outline: #C6DED6;
+  --color-outline-variant: #C6DED6;
+  --color-warning: #001412;
+  --color-warning-container: #C6DED6;
+  --color-on-warning-container: #001412;
+  --color-error: #001412;
+  --color-error-container: #001412;
+  --color-on-error-container: #F6FBF2;
+  --color-info: #00625C;
+  --color-info-container: #C6DED6;
+  --color-on-info-container: #001412;
+  --color-inverse-surface: #001412;
+  --color-inverse-on-surface: #F6FBF2;
+  --color-inverse-primary: #00625C;
+  --color-muted: #001412;
+  --color-white: #F6FBF2;
   --font-display: "Alata", sans-serif;
   --font-headline: "Alata", sans-serif;
   --font-body: "Instrument Sans", sans-serif;
@@ -51,17 +52,17 @@
   button:disabled { cursor: not-allowed; }
   a { color: inherit; text-decoration: none; }
   :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
-  ::selection { background: var(--color-primary-container); color: white; }
+  ::selection { background: var(--color-primary-container); color: #F6FBF2; }
 }
 
 @utility font-display { font-family: var(--font-display); }
 @utility font-telemetry { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-@utility pixel-panel { border: 1px solid var(--color-outline-variant); border-radius: 0; background: white; }
+@utility pixel-panel { border: 1px solid rgb(198 222 214 / 65%); border-radius: 10px; background: #F6FBF2; box-shadow: 0 2px 12px rgb(0 20 18 / 4%); }
 @utility pixel-heading { font-family: var(--font-headline); font-weight: 400; letter-spacing: .01em; }
 
 @keyframes lCornerPulse {
-  0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 0 rgba(186,26,26,0)); }
-  50% { opacity: .45; transform: scale(1.08); filter: drop-shadow(0 0 6px rgba(186,26,26,.55)); }
+  0%, 100% { opacity: 1; transform: scale(1); border-color: #001412; filter: drop-shadow(0 0 0 rgb(0 20 18 / 0)); }
+  50% { opacity: .65; transform: scale(1.08); border-color: #00625C; filter: drop-shadow(0 0 6px rgb(0 98 92 / 55%)); }
 }
 .l-corner-pulse { animation: lCornerPulse 1.05s ease-in-out infinite; }
 
