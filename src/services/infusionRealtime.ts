@@ -1,56 +1,53 @@
 import { ref } from 'vue'
-import type { ServerInfusPayload } from '@/types/infusion'
-import { useInfusionStore } from '@/stores/infusion'
+import type {
+  ServerCommand,
+  ServerErrorMessage,
+  ServerInfusPayload,
+  ServerMessage,
+  ServerNotification,
+  WsClientRequest,
+} from '@/types/backend'
 
 export type RealtimeStatus = 'not-configured' | 'connecting' | 'connected' | 'disconnected' | 'error'
 
-export const infusionRealtimeStatus = ref<RealtimeStatus>('not-configured')
+export const infusRealtimeStatus = ref<RealtimeStatus>('not-configured')
 
-interface ServerMessage {
-  type?: string
-  requestId?: string
-  message?: string
-  data?: Record<string, unknown>
+/**
+ * `data` menangkap semua device; `command`/`ack` dipakai untuk korelasi perintah.
+ * `error` dan `notify` tidak perlu di-subscribe karena server mengirimnya ke semua klien.
+ */
+const SUBSCRIBE_LABELS = ['data/#', 'command/#', 'ack/#']
+const BUFFERED_EVENT_TYPES = new Set(['data', 'command', 'acknowledgement'])
+
+const listeners = new Set<(message: ServerMessage) => void>()
+const outboundQueue: string[] = []
+const buffered: ServerMessage[] = []
+
+let socket: WebSocket | undefined
+let stopped = false
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+let reconnectAttempt = 0
+let subscribeRequestId = ''
+let waitingForSnapshot = false
+
+function id(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function parseServerMessage(value: unknown): ServerMessage | undefined {
-  if (!isRecord(value)) return undefined
-  if (value.type !== undefined && typeof value.type !== 'string') return undefined
-  if (value.requestId !== undefined && typeof value.requestId !== 'string') return undefined
-  if (value.message !== undefined && typeof value.message !== 'string') return undefined
-  if (value.data !== undefined && !isRecord(value.data)) return undefined
-  return {
-    type: typeof value.type === 'string' ? value.type : undefined,
-    requestId: typeof value.requestId === 'string' ? value.requestId : undefined,
-    message: typeof value.message === 'string' ? value.message : undefined,
-    data: isRecord(value.data) ? value.data : undefined,
-  }
-}
-
-function isServerInfusPayload(value: unknown): value is ServerInfusPayload {
-  if (!isRecord(value) || !isRecord(value.data)) return false
-  return typeof value.deviceId === 'string'
-    && typeof value.data.tpm === 'number'
-    && typeof value.data.infusType === 'string'
-    && typeof value.data.percent === 'number'
-    && (value.data.volume === undefined || typeof value.data.volume === 'number')
-    && (value.patientId === undefined || typeof value.patientId === 'string')
-    && (value.roomId === undefined || typeof value.roomId === 'string')
-    && (value.timestamp === undefined || typeof value.timestamp === 'string')
-}
-
 function websocketUrl(): string | undefined {
   const configuredUrl = import.meta.env.VITE_API_BASE_URL?.trim()
   if (!configuredUrl) return undefined
 
-  const url = new URL(configuredUrl)
+  const url = new URL(configuredUrl, window.location.origin)
   if (url.protocol === 'https:') url.protocol = 'wss:'
   else if (url.protocol === 'http:') url.protocol = 'ws:'
-  else throw new Error('VITE_API_BASE_URL harus menggunakan http:// atau https://')
+  else if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+    throw new Error('VITE_API_BASE_URL must use http://, https://, ws://, or wss://')
+  }
 
   url.pathname = '/ws'
   url.search = ''
@@ -58,117 +55,237 @@ function websocketUrl(): string | undefined {
   return url.toString()
 }
 
-function snapshotPayloads(data: Record<string, unknown>): ServerInfusPayload[] | undefined {
-  const records = data['data/+']
+export function parseServerMessage(value: unknown): ServerMessage | undefined {
+  if (!isRecord(value)) return undefined
+  if (value.type !== undefined && typeof value.type !== 'string') return undefined
+  if (value.requestId !== undefined && typeof value.requestId !== 'string') return undefined
+  if (value.message !== undefined && typeof value.message !== 'string') return undefined
+  if (value.labels !== undefined
+    && (!Array.isArray(value.labels) || !value.labels.every((label) => typeof label === 'string'))) {
+    return undefined
+  }
+
+  return {
+    type: typeof value.type === 'string' ? value.type : '',
+    requestId: typeof value.requestId === 'string' ? value.requestId : undefined,
+    message: typeof value.message === 'string' ? value.message : undefined,
+    labels: Array.isArray(value.labels) ? (value.labels as string[]) : undefined,
+    label: typeof value.label === 'string' ? value.label : undefined,
+    data: value.data,
+  }
+}
+
+function hasDeviceId(value: Record<string, unknown>): boolean {
+  return typeof value.deviceId === 'string' && value.deviceId.trim().length > 0
+}
+
+export function isServerInfusPayload(value: unknown): value is ServerInfusPayload {
+  if (!isRecord(value) || !isRecord(value.data)) return false
+  return hasDeviceId(value)
+    && typeof value.patientId === 'string'
+    && typeof value.roomId === 'string'
+    && (value.timestamp === undefined || typeof value.timestamp === 'string')
+    && typeof value.data.tpm === 'number'
+    && typeof value.data.infusType === 'string'
+    && typeof value.data.percent === 'number'
+    && typeof value.data.servoAngle === 'number'
+    && typeof value.data.volume === 'number'
+}
+
+export function isServerCommand(value: unknown): value is ServerCommand {
+  if (!isRecord(value) || !isRecord(value.data)) return false
+  return typeof value.type === 'string'
+    && hasDeviceId(value)
+    && (value._id === undefined || typeof value._id === 'string')
+    && (value.isSuccess === undefined || typeof value.isSuccess === 'boolean')
+    && (value.timestamp === undefined || typeof value.timestamp === 'string')
+}
+
+export function isServerNotification(value: unknown): value is ServerNotification {
+  if (!isRecord(value)) return false
+  return hasDeviceId(value)
+    && typeof value.message === 'string'
+    && (value.level === undefined || typeof value.level === 'string')
+    && (value.patientId === undefined || typeof value.patientId === 'string')
+    && (value.roomId === undefined || typeof value.roomId === 'string')
+    && (value.isRead === undefined || typeof value.isRead === 'boolean')
+    && (value.isResolved === undefined || typeof value.isResolved === 'boolean')
+    && (value.timestamp === undefined || typeof value.timestamp === 'string')
+}
+
+export function isServerError(value: unknown): value is ServerErrorMessage {
+  if (!isRecord(value)) return false
+  return hasDeviceId(value)
+    && typeof value.error === 'string'
+    && (value.isFixed === undefined || typeof value.isFixed === 'boolean')
+    && (value.timestamp === undefined || typeof value.timestamp === 'string')
+}
+
+/** Subscribe snapshots have the shape `{ "data/#": [payload, ...] }`. */
+export function extractSnapshot(data: unknown, label = 'data/#'): ServerInfusPayload[] | undefined {
+  if (!isRecord(data)) return undefined
+
+  const records = data[label] ?? data['data/+']
   if (!Array.isArray(records)) return undefined
 
   const payloads = new Map<string, ServerInfusPayload>()
   for (const record of records) {
-    if (!isServerInfusPayload(record)) {
-      console.error('[infusion-ws] Mengabaikan payload snapshot dengan format tidak valid:', record)
-      continue
-    }
-    if (!payloads.has(record.deviceId)) payloads.set(record.deviceId, record)
+    // Devices may publish payloads with an empty deviceId. They violate the
+    // contract and are skipped silently to avoid spamming the browser console.
+    if (!isServerInfusPayload(record)) continue
+    const deviceId = record.deviceId.trim()
+    if (!payloads.has(deviceId)) payloads.set(deviceId, { ...record, deviceId })
   }
   return [...payloads.values()]
 }
 
+export function onServerMessage(handler: (message: ServerMessage) => void): () => void {
+  listeners.add(handler)
+  return () => listeners.delete(handler)
+}
+
+function emit(message: ServerMessage): void {
+  for (const listener of listeners) listener(message)
+}
+
+function flushBuffered(): void {
+  const messages = buffered.splice(0)
+  for (const message of messages) emit(message)
+}
+
+function send(request: WsClientRequest): void {
+  const payload = JSON.stringify(request)
+  if (socket?.readyState === WebSocket.OPEN) socket.send(payload)
+  else outboundQueue.push(payload)
+}
+
+export function sendWsRequest(request: WsClientRequest): void {
+  send(request)
+}
+
 export function connectInfusionRealtime(): () => void {
-  let url: string | undefined
+  let endpoint: string
   try {
-    url = websocketUrl()
+    const resolved = websocketUrl()
+    if (!resolved) {
+      infusRealtimeStatus.value = 'not-configured'
+      return () => undefined
+    }
+    endpoint = resolved
   } catch (error) {
-    infusionRealtimeStatus.value = 'error'
-    console.error('[infusion-ws] URL backend tidak valid:', error)
+    infusRealtimeStatus.value = 'error'
+    console.error('[infus-ws] Invalid backend URL:', error)
     return () => undefined
   }
 
-  if (!url) {
-    infusionRealtimeStatus.value = 'not-configured'
-    return () => undefined
+  stopped = false
+
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    return () => stop()
   }
-  const endpoint = url
 
-  const store = useInfusionStore()
-  store.enableLiveMode()
-  let socket: WebSocket | undefined
-  let reconnectTimer: ReturnType<typeof setTimeout> | undefined
-  let stopped = false
+  connect()
 
-  function connect() {
+  return () => stop()
+
+  function connect(): void {
     if (stopped) return
-    infusionRealtimeStatus.value = 'connecting'
+    infusRealtimeStatus.value = 'connecting'
+
     try {
       socket = new WebSocket(endpoint)
     } catch (error) {
-      infusionRealtimeStatus.value = 'error'
-      console.error('[infusion-ws] Gagal membuka koneksi WebSocket:', error)
-      reconnectTimer = setTimeout(connect, 3000)
+      console.error('[infus-ws] Failed to open WebSocket connection:', error)
+      scheduleReconnect()
       return
     }
 
     socket.addEventListener('open', () => {
       if (stopped) return
-      infusionRealtimeStatus.value = 'connected'
-      socket?.send(JSON.stringify({
+      reconnectAttempt = 0
+      infusRealtimeStatus.value = 'connected'
+      waitingForSnapshot = true
+      buffered.length = 0
+      subscribeRequestId = id('sub')
+
+      send({
         action: 'subscribe',
-        requestId: `dashboard-${Date.now()}`,
-        labels: ['data/+'],
+        requestId: subscribeRequestId,
+        labels: SUBSCRIBE_LABELS,
         replay: true,
-      }))
+      })
+
+      const queued = outboundQueue.splice(0)
+      for (const payload of queued) socket?.send(payload)
     })
 
     socket.addEventListener('message', (event: MessageEvent<string>) => {
-      let message: ServerMessage
+      if (stopped) return
+
+      let parsed: unknown
       try {
-        const parsed: unknown = JSON.parse(event.data)
-        const validMessage = parseServerMessage(parsed)
-        if (!validMessage) throw new Error('format pesan tidak valid')
-        message = validMessage
+        parsed = JSON.parse(event.data)
       } catch (error) {
-        console.error('[infusion-ws] Gagal membaca pesan server:', error)
+        console.error('[infus-ws] Failed to parse server message:', error)
         return
       }
 
-      if (message.type === 'error') {
-        console.error('[infusion-ws] Server menolak request:', message.message ?? 'unknown error')
-        infusionRealtimeStatus.value = 'error'
+      const message = parseServerMessage(parsed)
+      if (!message) {
+        console.error('[infus-ws] Invalid message envelope:', parsed)
         return
       }
 
-      if (message.type === 'subscribed' && message.requestId?.startsWith('dashboard-')) {
-        const payloads = message.data ? snapshotPayloads(message.data) : undefined
-        if (!payloads) {
-          console.error('[infusion-ws] Server tidak mengirim snapshot pada label data/+')
-          infusionRealtimeStatus.value = 'error'
-          return
-        }
-        store.replaceServerSnapshot(payloads)
+      const isOwnSubscribeAck = message.requestId === subscribeRequestId
+      if (isOwnSubscribeAck && (message.type === 'subscribed' || message.type === 'error')) {
+        waitingForSnapshot = false
+        if (message.type === 'error') infusRealtimeStatus.value = 'error'
+        emit(message)
+        flushBuffered()
         return
       }
 
-      if (message.type === 'data' && isServerInfusPayload(message.data)) {
-        store.applyServerTelemetry(message.data)
+      // Events that may arrive before the DB snapshot are buffered so they are not lost when it is applied.
+      if (waitingForSnapshot && BUFFERED_EVENT_TYPES.has(message.type ?? '')) {
+        buffered.push(message)
+        return
       }
+
+      emit(message)
     })
 
     socket.addEventListener('error', (event) => {
-      console.error('[infusion-ws] Koneksi WebSocket mengalami error:', event)
-      infusionRealtimeStatus.value = 'error'
+      if (stopped) return
+      infusRealtimeStatus.value = 'error'
+      console.error('[infus-ws] WebSocket connection error:', event)
     })
 
     socket.addEventListener('close', () => {
       if (stopped) return
-      infusionRealtimeStatus.value = 'disconnected'
-      reconnectTimer = setTimeout(connect, 3000)
+      socket = undefined
+      infusRealtimeStatus.value = 'disconnected'
+      scheduleReconnect()
     })
   }
 
-  connect()
+  function scheduleReconnect(): void {
+    if (stopped || reconnectTimer) return
+    const delay = Math.min(30_000, 1_000 * 2 ** reconnectAttempt) + Math.floor(Math.random() * 250)
+    reconnectAttempt += 1
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = undefined
+      connect()
+    }, delay)
+  }
 
-  return () => {
+  function stop(): void {
     stopped = true
     if (reconnectTimer) clearTimeout(reconnectTimer)
+    reconnectTimer = undefined
     socket?.close()
+    socket = undefined
+    waitingForSnapshot = false
+    buffered.length = 0
+    infusRealtimeStatus.value = 'not-configured'
   }
 }

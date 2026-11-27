@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { reactive, watch, onMounted, onUnmounted } from 'vue'
 import type { DeviceConfigForm, InfusionDevice } from '@/types/infusion'
+import { deviceIdOf, patientIdOf, roomIdOf } from '@/services/deviceFields'
 const props = defineProps<{ open: boolean; device: InfusionDevice | null }>()
 const emit = defineEmits<{ close: []; save: [payload: DeviceConfigForm] }>()
 const form = reactive({ deviceId: '', nurse: '', patient: '', room: '', bed: '', fluid: 'NaCl 0.9%', totalMl: 500, targetTpm: 20 })
 watch(() => [props.open, props.device] as const, () => {
-  form.deviceId = props.device?.id ?? `INF-${String(Date.now()).slice(-3)}`
+  form.deviceId = props.device ? deviceIdOf(props.device) : `INF-${String(Date.now()).slice(-3)}`
   form.nurse = props.device?.nurse ?? ''
-  form.patient = props.device?.patient ?? ''
-  form.room = props.device?.room ?? ''
+  form.patient = props.device ? patientIdOf(props.device) : ''
+  form.room = props.device ? roomIdOf(props.device) : ''
   form.bed = props.device?.bed ?? ''
-  form.fluid = props.device?.fluid ?? 'NaCl 0.9%'
+  form.fluid = props.device?.telemetry?.data.infusType?.trim() || props.device?.fluid || 'NaCl 0.9%'
   form.totalMl = props.device?.totalMl ?? 500
   form.targetTpm = props.device?.targetTpm ?? 20
 }, { immediate: true })

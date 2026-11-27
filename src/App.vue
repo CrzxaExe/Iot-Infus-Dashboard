@@ -1,24 +1,25 @@
-<!-- <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+<script setup lang="ts">
+import { onMounted, onUnmounted, watch } from 'vue'
 import { RouterView } from 'vue-router'
-import { connectInfusionRealtime } from '@/services/infusionRealtime'
+import { useRealtimeStore } from '@/stores/realtime'
+import { useServerNotificationStore } from '@/stores/serverNotification'
+import PixelNotificationToast from '@/components/ui/PixelNotificationToast.vue'
 
-let disconnect: (() => void) | undefined
+const realtime = useRealtimeStore()
+const serverNotifications = useServerNotificationStore()
 
-onMounted(() => {
-  disconnect = connectInfusionRealtime()
+// Toast dipasang di root agar tampil di halaman mana pun, terlepas dari layout.
+watch(() => realtime.status, (status) => {
+  if (status === 'connected') void serverNotifications.loadHistory()
 })
 
-onUnmounted(() => disconnect?.())
+onMounted(() => realtime.start())
+onUnmounted(() => realtime.stop())
 </script>
 
 <template>
-  <RouterView></RouterView>
-</template>
-
-<style scoped></style> -->
-<template>
-  <RouterView></RouterView>
+  <RouterView />
+  <PixelNotificationToast />
 </template>
 
 <style scoped></style>

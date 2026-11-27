@@ -1,3 +1,5 @@
+import type { ServerInfusPayload } from './backend'
+
 export type InfusionLevel = 'normal' | 'warning' | 'critical'
 export type HistoryStatus = 'running' | 'ready' | 'done'
 export type BadgeStatus = InfusionLevel | HistoryStatus
@@ -40,19 +42,8 @@ export interface InfusionDevice {
   volumeHistory?: InfusionVolumeSample[]
   reportedVolume?: number
   source?: 'local' | 'server'
-}
-
-export interface ServerInfusPayload {
-  deviceId: string
-  patientId?: string
-  roomId?: string
-  timestamp?: string
-  data: {
-    tpm: number
-    infusType: string
-    percent: number
-    volume?: number
-  }
+  /** Original payload from InfusServer; local demo devices do not have it. */
+  telemetry?: ServerInfusPayload
 }
 
 export interface InfusionSnapshot {

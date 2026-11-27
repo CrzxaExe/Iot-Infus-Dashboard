@@ -1,23 +1,29 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useStorage } from '@vueuse/core'
 import { initialInfusionSnapshot } from '@/data/initialInfusionSnapshot'
-import type { DeviceConfigForm, InfusionDataEvent, InfusionDevice, InfusionHistoryEntry, InfusionLevel, InfusionSnapshot, HistoryStatus, ServerInfusPayload } from '@/types/infusion'
+import type { ServerInfusPayload } from '@/types/backend'
+import type { DeviceConfigForm, InfusionDataEvent, InfusionDevice, InfusionHistoryEntry, InfusionLevel, InfusionSnapshot, HistoryStatus } from '@/types/infusion'
+import { percentOf } from '@/services/deviceFields'
 import { toServerDevice } from '@/services/infusionProtocol'
 
 export const useInfusionStore = defineStore('infusion', () => {
   const devices = ref<InfusionDevice[]>(initialInfusionSnapshot.devices.map((item) => ({ ...item })))
   const history = ref<InfusionHistoryEntry[]>(initialInfusionSnapshot.history.map((item) => ({ ...item })))
   const liveMode = ref(false)
+  // Device configuration has no backend API yet, so keep it as a local overlay.
+  const deviceConfigs = useStorage<Record<string, DeviceConfigForm>>('infucare-device-configs', {})
   let historySequence = 0
 
   const activeDevices = computed(() => devices.value.filter((device) => device.status !== 'done'))
-  const criticalCount = computed(() => devices.value.filter((device) => device.status === 'running' && getLevel(device) === 'critical').length)
-  const warningCount = computed(() => devices.value.filter((device) => device.status === 'running' && getLevel(device) === 'warning').length)
+  // The backend has no session status, so count every active telemetry device.
+  const criticalCount = computed(() => devices.value.filter((device) => device.status !== 'done' && getLevel(device) === 'critical').length)
+  const warningCount = computed(() => devices.value.filter((device) => device.status !== 'done' && getLevel(device) === 'warning').length)
 
   function getLevel(device: InfusionDevice): InfusionLevel {
     if (device.status === 'done') return 'normal'
-    if (device.volumePct <= 5) return 'critical'
-    if (device.volumePct <= 10) return 'warning'
+    if (percentOf(device) <= 5) return 'critical'
+    if (percentOf(device) <= 10) return 'warning'
     return 'normal'
   }
 
@@ -28,6 +34,15 @@ export const useInfusionStore = defineStore('infusion', () => {
   function deleteDevice(id: string) {
     const index = devices.value.findIndex((device) => device.id === id)
     if (index >= 0) devices.value.splice(index, 1)
+    if (deviceConfigs.value[id]) {
+      const next = { ...deviceConfigs.value }
+      delete next[id]
+      deviceConfigs.value = next
+    }
+  }
+
+  function deviceConfig(id: string): DeviceConfigForm | undefined {
+    return deviceConfigs.value[id]
   }
 
   function replaceSnapshot(snapshot: InfusionSnapshot) {
@@ -42,12 +57,20 @@ export const useInfusionStore = defineStore('infusion', () => {
   }
 
   function replaceServerSnapshot(payloads: ServerInfusPayload[]) {
-    devices.value = payloads.map(toServerDevice)
+    devices.value = payloads
+      .filter((payload) => Boolean(payload.deviceId?.trim()))
+      .map((payload) => {
+        const deviceId = payload.deviceId.trim()
+        return toServerDevice({ ...payload, deviceId }, deviceConfigs.value[deviceId])
+      })
     history.value = []
   }
 
   function applyServerTelemetry(payload: ServerInfusPayload) {
-    const incoming = toServerDevice(payload)
+    if (!payload.deviceId?.trim()) return
+    const deviceId = payload.deviceId.trim()
+    const config = deviceConfigs.value[deviceId]
+    const incoming = toServerDevice({ ...payload, deviceId }, config)
     const current = findDevice(incoming.id)
     if (!current) {
       devices.value.push(incoming)
@@ -56,9 +79,17 @@ export const useInfusionStore = defineStore('infusion', () => {
 
     const samples = [...(current.volumeHistory ?? []), ...(incoming.volumeHistory ?? [])].slice(-1000)
     Object.assign(current, incoming, {
-      nurse: current.nurse,
-      targetTpm: current.targetTpm || incoming.targetTpm,
+      paused: current.paused,
       volumeHistory: samples,
+      ...(config ? {} : {
+        nurse: current.nurse || incoming.nurse,
+        patient: current.patient || incoming.patient,
+        room: current.room || incoming.room,
+        bed: current.bed || incoming.bed,
+        fluid: current.fluid || incoming.fluid,
+        totalMl: current.totalMl || incoming.totalMl,
+        targetTpm: current.targetTpm || incoming.targetTpm,
+      }),
     })
   }
 
@@ -129,6 +160,10 @@ export const useInfusionStore = defineStore('infusion', () => {
   }
 
   function configureDevice(payload: DeviceConfigForm) {
+    deviceConfigs.value = {
+      ...deviceConfigs.value,
+      [payload.deviceId]: { ...payload },
+    }
     const existing = findDevice(payload.deviceId)
     const totalMl = Math.max(1, Number(payload.totalMl) || 500)
     const patient = payload.patient.trim()
@@ -204,5 +239,5 @@ export const useInfusionStore = defineStore('infusion', () => {
     if (item) item.status = status
   }
 
-  return { devices, history, liveMode, activeDevices, criticalCount, warningCount, getLevel, findDevice, deleteDevice, replaceSnapshot, enableLiveMode, replaceServerSnapshot, applyServerTelemetry, applyDataEvent, updateDevice, configureDevice, adjustTarget, togglePause, replaceFluid, setHistoryStatus }
+  return { devices, history, liveMode, deviceConfigs, activeDevices, criticalCount, warningCount, getLevel, findDevice, deviceConfig, deleteDevice, replaceSnapshot, enableLiveMode, replaceServerSnapshot, applyServerTelemetry, applyDataEvent, updateDevice, configureDevice, adjustTarget, togglePause, replaceFluid, setHistoryStatus }
 })

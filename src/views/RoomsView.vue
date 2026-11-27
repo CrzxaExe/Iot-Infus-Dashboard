@@ -3,6 +3,8 @@ import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import PixelCornerFrame from '@/components/ui/PixelCornerFrame.vue'
 import { useInfusionStore } from '@/stores/infusion'
+import { deviceIdOf, infusTypeOf, patientIdOf, percentOf, roomIdOf, tpmOf, volumeLabelOf } from '@/services/deviceFields'
+import { deviceDetailPath } from '@/utils/deviceRoute'
 import type { InfusionDevice, InfusionLevel } from '@/types/infusion'
 
 type RoomFilter = 'all' | 'critical' | 'warning' | 'normal'
@@ -17,12 +19,13 @@ type RoomGroup = {
 const store = useInfusionStore()
 const activeFilter = ref<RoomFilter>('all')
 const searchQuery = ref('')
-const runningDevices = computed(() => store.devices.filter((device) => device.status === 'running'))
+// Backend has no session status; include standby telemetry devices as well.
+const visibleDevices = computed(() => store.devices.filter((device) => device.status !== 'done'))
 
 const rooms = computed<RoomGroup[]>(() => {
   const grouped = new Map<string, InfusionDevice[]>()
-  for (const device of runningDevices.value) {
-    const name = device.room.trim() || 'Ruangan belum ditentukan'
+  for (const device of visibleDevices.value) {
+    const name = roomIdOf(device).trim() || 'Ruangan belum ditentukan'
     const devices = grouped.get(name) ?? []
     devices.push(device)
     grouped.set(name, devices)
@@ -54,8 +57,8 @@ const filteredRooms = computed(() => {
     if (!query) return true
 
     return room.name.toLocaleLowerCase().includes(query)
-      || room.devices.some((device) => device.id.toLocaleLowerCase().includes(query)
-        || device.patient.toLocaleLowerCase().includes(query))
+      || room.devices.some((device) => deviceIdOf(device).toLocaleLowerCase().includes(query)
+        || patientIdOf(device).toLocaleLowerCase().includes(query))
   })
 })
 
@@ -143,31 +146,31 @@ function roomBadgeClass(room: RoomGroup) {
             <div class="flex min-w-0 items-center gap-3">
               <div
                 role="img"
-                :aria-label="`Sisa cairan ${device.volumePct}%`"
+                :aria-label="`Sisa cairan ${percentOf(device)}%`"
                 class="flex h-14 min-h-[56px] w-10 min-w-[40px] shrink-0 flex-col justify-end overflow-hidden rounded-[6px] border border-[#001412] bg-[#F6FBF2] p-0.5"
               >
                 <div
                   class="w-full shrink-0 rounded-[3px] transition-[height]"
                   :class="bottleFillClass(device)"
-                  :style="{ height: `${Math.max(8, device.volumePct)}%` }"
+                  :style="{ height: `${Math.max(8, percentOf(device))}%` }"
                 />
               </div>
 
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-1.5">
-                  <p class="font-telemetry text-xs font-bold text-[#001412]">{{ device.bed ? `${device.bed} · ` : '' }}{{ device.id }}</p>
+                  <p class="font-telemetry text-xs font-bold text-[#001412]">{{ device.bed ? `${device.bed} · ` : '' }}{{ deviceIdOf(device) }}</p>
                   <span
                     class="rounded-[4px] px-1.5 py-0.5 font-telemetry text-[11px] font-bold"
                     :class="store.getLevel(device) === 'critical' ? 'bg-[#001412] text-[#F6FBF2]' : store.getLevel(device) === 'warning' ? 'border border-[#001412] bg-[#C6DED6] text-[#001412]' : 'bg-[#C6DED6] text-[#00625C]'"
-                  >{{ device.volumePct }}% · {{ statusLabel(store.getLevel(device)) }}</span>
+                  >{{ percentOf(device) }}% · {{ statusLabel(store.getLevel(device)) }}</span>
                 </div>
-                <p class="truncate text-sm font-semibold text-[#001412]">{{ device.patient }} · {{ device.fluid }}</p>
-                <p class="font-telemetry text-xs tabular-nums text-[#00625C]">{{ device.remainingMl }} / {{ device.totalMl }} ml · {{ device.rateTpm }} tpm</p>
+                <p class="truncate text-sm font-semibold text-[#001412]">{{ patientIdOf(device) || 'Belum ditempati' }} · {{ infusTypeOf(device) }}</p>
+                <p class="font-telemetry text-xs tabular-nums text-[#00625C]">{{ volumeLabelOf(device) }} · {{ tpmOf(device) }} tpm</p>
               </div>
             </div>
 
             <RouterLink
-              :to="{ name: 'detail-perangkat', params: { id: device.id } }"
+              :to="deviceDetailPath(device.id)"
               class="shrink-0 rounded-[8px] bg-[#C6DED6]/55 px-3 py-1.5 text-xs font-medium text-[#001412] transition-colors hover:bg-[#00625C] hover:text-[#F6FBF2]"
             >Detail →</RouterLink>
           </div>
